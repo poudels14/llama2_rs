@@ -1,8 +1,11 @@
 use crate::math;
 use crate::reader::FloatReader;
 use crate::transformer;
+use crate::vocab::Vocab;
 use anyhow::Result;
 use serde::Deserialize;
+use std::io::Write;
+use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -66,11 +69,13 @@ pub fn run(
     config: &Config,
     state: &mut RunState,
     weights: &TransformerWeights,
+    vocab: &Vocab,
     options: RunOptions,
 ) {
     let mut next;
     let mut token = 1; // 1 = BOS token in Llama-2 sentencepiece
     let mut pos = 0;
+    let start = Instant::now();
     while pos < config.seq_len {
         // forward the transformer to get logits for the next token
         transformer::transformer(token, pos, config, state, weights);
@@ -89,12 +94,17 @@ pub fn run(
             // we now want to sample from this distribution to get the next token
             next = math::sample(&state.logits, config.vocab_size);
         }
-        println!("{:?}", next);
+        print!("{}", vocab.get_token(next));
+        std::io::stdout().flush().unwrap();
 
         // advance forward
         token = next;
         pos += 1;
     }
+    println!(
+        "\n{:.3} Tokens/Sec",
+        pos as f32 / start.elapsed().as_secs_f32()
+    );
 }
 
 pub fn read_config(r: &mut FloatReader) -> Result<Config> {
