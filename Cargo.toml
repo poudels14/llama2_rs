@@ -1,0 +1,29 @@
+[package]
+name = "llama2_rs"
+description = "A rust port of llama2.c"
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "llama2"
+path = "src/main.rs"
+
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+debug = false
+strip = true
+lto = true
+
+
+[dependencies]
+anyhow = "1.0.72"
+bincode = "1.3.3"
+serde = { version = "1.0.175", features = ["derive"] }
+rand = "0.8.5"
+rayon = "1.7.0"
+clap = { version = "4.3.19", features = ["derive"] }
+wide = "0.7.11"
+crunchy = "0.2.2"
