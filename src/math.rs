@@ -1,4 +1,7 @@
 use crunchy::unroll;
+use once_cell::sync::Lazy;
+use rayon::prelude::IntoParallelIterator;
+use rayon::prelude::*;
 use std::ops::{AddAssign, MulAssign};
 use wide::f32x8;
 
@@ -72,39 +75,37 @@ pub fn softmax(x: &mut [f32], size: usize) {
     }
 }
 
+pub static NUM_THREADS: Lazy<usize> = Lazy::new(|| {
+    std::env::var("NUM_THREADS")
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+        .max(1)
+});
+
 pub fn matmul(xout: &mut [f32], x: &[f32], w: &[f32], n: usize, d: usize) {
     // W (d,n) @ x (n,) -> xout (d,)
     // Note(sagar): since the loop is unrolled, assert for n here
     assert!(n % 32 == 0);
 
-    // Note(sagar): best to set this to be same as rayon threadpool threads
-    let threads = 2;
+    // Note(sagar): set this to be same as rayon threadpool threads
+    let threads = *NUM_THREADS;
     let xout = xout.as_ptr() as usize;
     let x = x.as_ptr() as usize;
     let w = w.as_ptr() as usize;
 
-    rayon::join(
-        || unsafe {
-            let st = 0 * d / threads;
+    let batch_size = (d / threads) + 1;
+    (0..threads).into_par_iter().for_each(|i| unsafe {
+        let offset = i * batch_size;
+        let batch_size = batch_size.min(d - offset);
 
-            let xout = (xout) as *mut f32;
-            let xout = xout.offset(st as isize);
-            let xout: &mut [f32] = core::slice::from_raw_parts_mut(xout, d / threads);
-            let x: &mut [f32] = core::slice::from_raw_parts_mut(x as *mut f32, n);
-            let w: &mut [f32] = core::slice::from_raw_parts_mut(w as *mut f32, n * d);
-            matmul_partial(xout, x, &w[st * n..], n, d / threads);
-        },
-        || unsafe {
-            let st = 1 * d / threads;
-
-            let xout = (xout) as *mut f32;
-            let xout = xout.offset(st as isize);
-            let xout: &mut [f32] = core::slice::from_raw_parts_mut(xout, d / threads);
-            let x: &mut [f32] = core::slice::from_raw_parts_mut(x as *mut f32, n);
-            let w: &mut [f32] = core::slice::from_raw_parts_mut(w as *mut f32, n * d);
-            matmul_partial(xout, x, &w[st * n..], n, d / threads);
-        },
-    );
+        let xout = (xout) as *mut f32;
+        let xout = xout.offset(offset as isize);
+        let xout: &mut [f32] = core::slice::from_raw_parts_mut(xout, batch_size);
+        let x: &mut [f32] = core::slice::from_raw_parts_mut(x as *mut f32, n);
+        let w: &mut [f32] = core::slice::from_raw_parts_mut(w as *mut f32, n * d);
+        matmul_partial(xout, x, &w[offset * n..], n, batch_size);
+    });
 }
 
 fn matmul_partial(xout: &mut [f32], x: &[f32], w: &[f32], n: usize, d: usize) {

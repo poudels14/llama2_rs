@@ -273,6 +273,8 @@ dependencies = [
  "bincode",
  "clap",
  "crunchy",
+ "num_cpus",
+ "once_cell",
  "rand",
  "rayon",
  "serde",
